@@ -12,4 +12,6 @@ This will run cx_freeze (automatially installed from requirements.txt) to build 
 
 # libcodec2
 Finally, you will need to compile codec2 from https://github.com/drowe67/codec2.
-Once built, place the libcodec2.so / .dll files inside a `lib` directory located in root directory.
+Once built, place the libcodec2.so / .dll files inside a `lib` directory in the same directory as the .py files.
+If you used cx_freeze to build the files, a `lib` directory already exists in the build directory.
+Put the libcodec2 files there!
