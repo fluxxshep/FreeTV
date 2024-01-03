@@ -5,4 +5,4 @@ This program is in very, very early stages of development. Expect bugs, and use 
 
 # Installation
 Install python 3 on your system. Then, run `pip install -r requirements.txt` in the root directory of this repository. *You might want to do this in a python virtual environment!*
-Then run `freetv.py`, or you may choose to convert to a standalone executable by running `python setup.py build`. This will run cx_freeze (automatially installed from requirements.txt) to build the app.
+Then run `python freetv.py`, or you may choose to convert to a standalone executable by running `python setup.py build`. This will run cx_freeze (automatially installed from requirements.txt) to build the app.
