@@ -136,7 +136,7 @@ class MainWindow(QMainWindow):
         self.image_x = 500
         self.image_y = 500
 
-        self.rx_image = np.ones(shape=(self.image_x, self.image_y), dtype=np.uint8) * 200
+        self.rx_image = np.ones(shape=(self.image_x, self.image_y, 3), dtype=np.uint8) * 100
         self.rx_image_frame = QLabel()
         self.update_rx_image(self.rx_image)
 
@@ -171,7 +171,7 @@ class MainWindow(QMainWindow):
         self.tx_label = QLabel('Transmit')
         self.tx_label.setFont(QFont('Arial', 25))
 
-        self.tx_image = np.ones(shape=(self.image_x, self.image_y), dtype=np.uint8) * 200
+        self.tx_image = np.ones(shape=(self.image_x, self.image_y, 3), dtype=np.uint8) * 100
         self.tx_image_frame = QLabel()
         self.update_tx_image(self.tx_image)
 
