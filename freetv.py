@@ -13,9 +13,6 @@ import time
 
 class ModemSignals(QObject):
     rx_signal = Signal(bytes)
-    # tx_signal = Signal(bytes)
-    # retransmit_signal = Signal()
-    # stop_signal = Signal()
     transmit_on_off_signal = Signal(bool)
     rx_callsign_signal = Signal(str)
 
@@ -27,10 +24,7 @@ class ModemWorker(QObject):
         self.run = True
         self.is_transmitting = False
         self.signal = ModemSignals()
-        # self.signal.tx_signal.connect(self.transmit)
-        # self.signal.retransmit_signal.connect(self.request_retransmit)
-        # self.signal.stop_signal.connect(self.stop)
-        self.tx_image = None
+        self.tx_data = None
         self.retransmit = False
 
     def work(self):
@@ -51,10 +45,10 @@ class ModemWorker(QObject):
 
                     self.signal.rx_signal.emit(rx_data)
 
-            elif self.tx_image:
-                compressed_image = avif_encode(self.tx_image, level=10)
+            elif self.tx_data:
                 self.signal.transmit_on_off_signal.emit(True)
-                self.modem.arq_tx(compressed_image)
+                self.modem.arq_tx(self.tx_data)
+                self.tx_data = None
                 self.is_transmitting = False
                 self.signal.transmit_on_off_signal.emit(False)
 
@@ -68,9 +62,9 @@ class ModemWorker(QObject):
         if self.modem.check_missed_frames() is not None:
             self.retransmit = True
 
-    def transmit_image(self, image):
+    def transmit(self, data):
         self.is_transmitting = True
-        self.tx_image = image
+        self.tx_data = data
 
 
 class MainWindow(QMainWindow):
@@ -100,20 +94,17 @@ class MainWindow(QMainWindow):
 
         self.callsign_input_label = QLabel('My callsign')
         self.callsign_input_label.setFont(QFont('Arial', 15))
-        # self.callsign_input_label.setFixedSize(150, 50)
+
         self.callsign_input = QLineEdit()
         self.callsign_input.textChanged.connect(self.set_callsign)
-        # self.callsign_input.setFixedSize(150, 25)
 
         self.in_device_select = QComboBox()
         self.in_device_select.addItems(self.in_devices.values())
         self.in_device_select.currentTextChanged.connect(self.change_input_device)
-        # self.in_device_select.setFixedSize(200, 25)
 
         self.out_device_select = QComboBox()
         self.out_device_select.addItems(self.out_devices.values())
         self.out_device_select.currentTextChanged.connect(self.change_output_device)
-        # self.out_device_select.setFixedSize(200, 25)
 
         self.modem_start_button = QPushButton('Modem start / stop')
         self.modem_start_button.clicked.connect(self.start_stop_modem)
@@ -121,11 +112,9 @@ class MainWindow(QMainWindow):
         modem_button_palette = self.modem_start_button.palette()
         modem_button_palette.setColor(self.modem_start_button.backgroundRole(), Qt.GlobalColor.red)
         self.modem_start_button.setPalette(modem_button_palette)
-        # self.modem_start_button.setFixedSize(150, 25)
 
         self.settings_label = QLabel('Settings')
         self.settings_label.setFont(QFont('Arial', 25))
-        # self.settings_label.setFixedSize(150, 50)
 
         self.settings_layout = QVBoxLayout(self.settings_widget)
         self.settings_layout.addWidget(self.settings_label)
