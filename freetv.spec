@@ -5,7 +5,7 @@ a = Analysis(
     ['freetv.py'],
     pathex=[],
     binaries=[],
-    datas=[('lib', 'lib'],
+    datas=[('lib', 'lib')],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
