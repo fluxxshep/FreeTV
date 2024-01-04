@@ -45,24 +45,26 @@ class ModemWorker(QObject):
 
                     self.signal.rx_signal.emit(rx_data)
 
-            elif self.tx_data:
+            elif self.tx_data is not None:
+                compressed_image = avif_encode(self.tx_data, level=10)
                 self.signal.transmit_on_off_signal.emit(True)
-                self.modem.arq_tx(self.tx_data)
+                self.modem.arq_tx(compressed_image)
                 self.tx_data = None
+
+            elif self.is_transmitting and not self.modem.is_transmitting:
                 self.is_transmitting = False
                 self.signal.transmit_on_off_signal.emit(False)
 
-        self.modem.close()
-        self.thread().quit()
-
     def stop(self):
         self.run = False
+        self.modem.close()
+        self.thread().quit()
 
     def request_retransmit(self):
         if self.modem.check_missed_frames() is not None:
             self.retransmit = True
 
-    def transmit(self, data):
+    def transmit_image(self, data):
         self.is_transmitting = True
         self.tx_data = data
 
@@ -212,7 +214,7 @@ class MainWindow(QMainWindow):
             self.modem_start_button.setPalette(modem_button_palette)
         else:
             self.modem.stop()
-            time.sleep(0.25)
+            # time.sleep(0.25)
             self.modem = None
 
             modem_button_palette = self.modem_start_button.palette()
@@ -295,14 +297,17 @@ class MainWindow(QMainWindow):
             self.update_rx_image(self.rx_image)
 
     def transmit_image(self):
-        if self.modem is not None and not self.modem_transmitting:
-            compressed_image = avif_encode(self.tx_image, level=10)
-            self.modem.transmit(compressed_image)
+        if self.modem is not None:
+            if not self.modem_transmitting:
+                self.modem.transmit_image(self.tx_image)
+            else:
+                self.modem.modem.halt_tx()
 
     def closeEvent(self, event):
         if self.modem:
             self.modem.stop()
-            time.sleep(0.25)
+
+        time.sleep(0.5)
 
 
 if __name__ == '__main__':
