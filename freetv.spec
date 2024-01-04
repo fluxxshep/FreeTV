@@ -16,8 +16,6 @@ a = Analysis(
 pyz = PYZ(a.pure)
 
 exe = EXE(
-    name='FreeTV',
-    console=False,
     pyz,
     a.scripts,
     [],
@@ -33,6 +31,8 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    name='FreeTV',
+    console=False,
 )
 coll = COLLECT(
     exe,
