@@ -99,25 +99,26 @@ class Modem:
 
     def rx_loop(self):
         while True:
-            try:
-                if self.rx_control_queue.get(block=False):
-                    break
-            except queue.Empty:
-                pass
+            if not self.is_transmitting:
+                try:
+                    if self.rx_control_queue.get(block=False):
+                        break
+                except queue.Empty:
+                    pass
 
-            rx_freedv = None
-            if self.freedv_mode == self.forward_mode:
-                rx_freedv = self.forward_freedv
-            elif self.freedv_mode == self.arq_mode:
-                rx_freedv = self.arq_freedv
+                rx_freedv = None
+                if self.freedv_mode == self.forward_mode:
+                    rx_freedv = self.forward_freedv
+                elif self.freedv_mode == self.arq_mode:
+                    rx_freedv = self.arq_freedv
 
-            assert rx_freedv is not None
+                assert rx_freedv is not None
 
-            nin = rx_freedv.nin
-            self.rx_state, rx_bytes = rx_freedv.rx(self.pastream.read(nin, exception_on_overflow=False))
+                nin = rx_freedv.nin
+                self.rx_state, rx_bytes = rx_freedv.rx(self.pastream.read(nin, exception_on_overflow=False))
 
-            if rx_bytes:
-                self.rx_queue.put(rx_bytes[:-2])
+                if rx_bytes:
+                    self.rx_queue.put(rx_bytes[:-2])
 
     def set_mode(self, mode):
         self.freedv_mode = mode
@@ -160,6 +161,7 @@ class Modem:
         return rx_data
 
     def halt_tx(self):
+        self.halted_tx = True
         with self.tx_queue.mutex:
             self.tx_queue.queue.clear()
 
@@ -317,7 +319,7 @@ class ArqModem(Modem):
             self.rx_num_frames = int.from_bytes(num_frames)
 
     def check_missed_frames(self):
-        if self.last_rx_sync is not None:
+        if self.last_rx_sync is not None and self.rx_num_frames is not None:
             if time.time() - self.last_rx_sync > self.missed_frames_wait_time:
                 missed_frames = []
 

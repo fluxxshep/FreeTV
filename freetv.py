@@ -46,8 +46,8 @@ class ModemWorker(QObject):
                     self.signal.rx_signal.emit(rx_data)
 
             elif self.tx_data is not None:
-                compressed_image = avif_encode(self.tx_data, level=10)
                 self.signal.transmit_on_off_signal.emit(True)
+                compressed_image = avif_encode(self.tx_data, level=10)
                 self.modem.arq_tx(compressed_image)
                 self.tx_data = None
 
