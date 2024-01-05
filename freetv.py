@@ -26,10 +26,15 @@ class ModemWorker(QObject):
         self.signal = ModemSignals()
         self.tx_data = None
         self.retransmit = False
+        self.test_frame = False
 
     def work(self):
         while self.run:
-            if self.retransmit:
+            if self.test_frame:
+                self.modem.tx_test_frame()
+                self.test_frame = False
+
+            elif self.retransmit:
                 self.modem.tx_retransmit_request()
                 self.retransmit = False
 
@@ -64,6 +69,9 @@ class ModemWorker(QObject):
         if self.modem.check_missed_frames() is not None:
             self.retransmit = True
 
+    def transmit_test_frame(self):
+        self.test_frame = True
+
     def transmit_image(self, data):
         self.is_transmitting = True
         self.tx_data = data
@@ -82,6 +90,7 @@ class MainWindow(QMainWindow):
         self.modem = None
         self.modem_transmitting = False
         self.modem_thread = None
+        self.tx_volume = 100
 
         # setup widgets
 
@@ -115,6 +124,22 @@ class MainWindow(QMainWindow):
         modem_button_palette.setColor(self.modem_start_button.backgroundRole(), Qt.GlobalColor.red)
         self.modem_start_button.setPalette(modem_button_palette)
 
+        self.volume_label = QLabel('TX volume: 100')
+        self.volume_label.setFont(QFont('Arial', 12))
+
+        self.volume_slider = QSlider(Qt.Horizontal)
+        self.volume_slider.setMinimum(0)
+        self.volume_slider.setMaximum(100)
+        self.volume_slider.setSliderPosition(100)
+        self.volume_slider.valueChanged.connect(self.set_tx_volume)
+
+        self.test_frame_button = QPushButton('TX test frame')
+        self.test_frame_button.clicked.connect(self.tx_test_frame)
+        self.test_frame_button.setAutoFillBackground(True)
+        test_frame_button_palette = self.test_frame_button.palette()
+        test_frame_button_palette.setColor(self.test_frame_button.backgroundRole(), Qt.GlobalColor.red)
+        self.test_frame_button.setPalette(test_frame_button_palette)
+
         self.settings_label = QLabel('Settings')
         self.settings_label.setFont(QFont('Arial', 25))
 
@@ -125,6 +150,9 @@ class MainWindow(QMainWindow):
         self.settings_layout.addWidget(self.in_device_select)
         self.settings_layout.addWidget(self.out_device_select)
         self.settings_layout.addWidget(self.modem_start_button)
+        self.settings_layout.addWidget(self.volume_label)
+        self.settings_layout.addWidget(self.volume_slider)
+        self.settings_layout.addWidget(self.test_frame_button)
         self.settings_layout.setSpacing(0)
         self.settings_layout.addStretch(1)
 
@@ -200,6 +228,7 @@ class MainWindow(QMainWindow):
     def start_stop_modem(self):
         if self.modem is None:
             self.modem = ModemWorker(self.callsign, self.in_device, self.out_device)
+            self.modem.modem.set_tx_volume(self.tx_volume)
             self.modem_thread = QThread()
             self.modem.moveToThread(self.modem_thread)
             self.modem_thread.started.connect(self.modem.work)
@@ -214,7 +243,7 @@ class MainWindow(QMainWindow):
             self.modem_start_button.setPalette(modem_button_palette)
         else:
             self.modem.stop()
-            # time.sleep(0.25)
+            time.sleep(0.25)
             self.modem = None
 
             modem_button_palette = self.modem_start_button.palette()
@@ -271,6 +300,9 @@ class MainWindow(QMainWindow):
                 self.tx_image = cv2.resize(tx_image, (self.image_x, self.image_y))
                 self.update_tx_image(self.tx_image)
 
+    def tx_test_frame(self):
+        self.modem.transmit_test_frame()
+
     def modem_transmitting_on_off(self, modem_transmitting):
         self.modem_transmitting = modem_transmitting
 
@@ -303,11 +335,15 @@ class MainWindow(QMainWindow):
             else:
                 self.modem.modem.halt_tx()
 
+    def set_tx_volume(self, vol):
+        self.tx_volume = vol
+        self.volume_label.setText(f'TX volume: {vol}')
+
     def closeEvent(self, event):
         if self.modem:
             self.modem.stop()
 
-        time.sleep(0.5)
+        time.sleep(1)
 
 
 if __name__ == '__main__':

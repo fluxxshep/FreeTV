@@ -1,10 +1,8 @@
-import queue
+import numpy as np
 import freedv
 import pyaudio
 import math
 import time
-from threading import Thread
-from queue import Queue
 
 
 def list_audio_devices():
@@ -37,13 +35,14 @@ class Modem:
     arq_mode = freedv.MODE_DATAC13
 
     def __init__(self, in_device, out_device):
-        self.audio_frames_per_buffer = 1024
+        self.audio_frames_per_buffer = 256
 
         self.p = pyaudio.PyAudio()
         self.pastream = self.p.open(rate=8000, channels=1, format=pyaudio.paInt16,
                                     frames_per_buffer=self.audio_frames_per_buffer,
                                     input=True, output=True,
-                                    input_device_index=in_device, output_device_index=out_device)
+                                    input_device_index=in_device, output_device_index=out_device,
+                                    stream_callback=self.pa_callback)
 
         self.forward_freedv = freedv.FreeDVData(self.forward_mode)
         self.arq_freedv = freedv.FreeDVData(self.arq_mode)
@@ -55,124 +54,77 @@ class Modem:
         self.forward_bytes_per_frame = freedv.get_payload_bytes_from_mode(self.forward_mode)
         self.arq_bytes_per_frame = freedv.get_payload_bytes_from_mode(self.arq_mode)
 
-        self.rx_queue = Queue()
-        self.tx_queue = Queue()
-        self.rx_control_queue = Queue()
-        self.tx_control_queue = Queue()
-
-        self.rx_loop_thread = Thread(target=self.rx_loop)
-        self.tx_loop_thread = Thread(target=self.tx_loop)
-        self.rx_loop_thread.start()
-        self.tx_loop_thread.start()
+        self.rx_audio_buffer = freedv.audio_buffer(self.audio_frames_per_buffer * 5000)
+        self.tx_audio_buffer = freedv.audio_buffer(self.audio_frames_per_buffer * 5000)
 
         self.halted_tx = False
+        self.tx_volume = 1.0
 
-    def tx_loop(self):
-        while True:
-            try:
-                if self.tx_control_queue.get(block=False):
-                    break
-            except queue.Empty:
-                pass
+    def pa_callback(self, in_data, frame_count, time_info, status):
+        if not self.is_transmitting:
+            samples_int16 = np.frombuffer(in_data, dtype=np.int16)
+            self.rx_audio_buffer.push(samples_int16)
 
-            tx_data = None
-
-            try:
-                tx_data = self.tx_queue.get(block=False)
-            except queue.Empty:
-                pass
-
-            if tx_data is not None:
-                tx_freedv = None
-                if self.freedv_mode == self.forward_mode:
-                    tx_freedv = self.forward_freedv
-                elif self.freedv_mode == self.arq_mode:
-                    tx_freedv = self.arq_freedv
-
-                assert tx_freedv is not None
-
-                samples = tx_freedv.tx_burst(tx_data)
-                self.pastream.write(samples)
+        else:
+            if self.tx_audio_buffer.nbuffer > frame_count:
+                tx_samples = self.tx_audio_buffer.buffer[:frame_count]
+                self.tx_audio_buffer.pop(frame_count)
+                return tx_samples, pyaudio.paContinue
 
             else:
                 self.is_transmitting = False
 
-    def rx_loop(self):
-        while True:
-            if not self.is_transmitting:
-                try:
-                    if self.rx_control_queue.get(block=False):
-                        break
-                except queue.Empty:
-                    pass
-
-                rx_freedv = None
-                if self.freedv_mode == self.forward_mode:
-                    rx_freedv = self.forward_freedv
-                elif self.freedv_mode == self.arq_mode:
-                    rx_freedv = self.arq_freedv
-
-                assert rx_freedv is not None
-
-                nin = rx_freedv.nin
-                self.rx_state, rx_bytes = rx_freedv.rx(self.pastream.read(nin, exception_on_overflow=False))
-
-                if rx_bytes:
-                    self.rx_queue.put(rx_bytes[:-2])
+        # just generate silence
+        silence_samples = b'\x00' * (frame_count * 2)
+        return silence_samples, pyaudio.paContinue
 
     def set_mode(self, mode):
         self.freedv_mode = mode
 
     def tx(self, data):
-        # tx_freedv = None
-        # if self.freedv_mode == self.forward_mode:
-        #     tx_freedv = self.forward_freedv
-        # elif self.freedv_mode == self.arq_mode:
-        #     tx_freedv = self.arq_freedv
-        #
-        # assert tx_freedv is not None
-        #
-        # samples = tx_freedv.tx_burst(data)
-        # self.pastream.write(samples)
-        self.tx_queue.put(data)
         self.is_transmitting = True
 
+        tx_freedv = None
+        if self.freedv_mode == self.forward_mode:
+            tx_freedv = self.forward_freedv
+        elif self.freedv_mode == self.arq_mode:
+            tx_freedv = self.arq_freedv
+
+        assert tx_freedv is not None
+
+        tx_samples = tx_freedv.tx_burst(data)
+        self.tx_audio_buffer.push(np.frombuffer(tx_samples, dtype=np.int16))
+
     def rx(self):
-        # rx_freedv = None
-        # if self.freedv_mode == self.forward_mode:
-        #     rx_freedv = self.forward_freedv
-        # elif self.freedv_mode == self.arq_mode:
-        #     rx_freedv = self.arq_freedv
-        #
-        # assert rx_freedv is not None
-        #
-        # nin = rx_freedv.nin
-        # self.rx_state, rx_bytes = rx_freedv.rx(self.pastream.read(nin, exception_on_overflow=False))
-        #
-        # if rx_bytes:
-        #     return rx_bytes[:-2]
-        rx_data = None
+        rx_freedv = None
+        if self.freedv_mode == self.forward_mode:
+            rx_freedv = self.forward_freedv
+        elif self.freedv_mode == self.arq_mode:
+            rx_freedv = self.arq_freedv
 
-        try:
-            rx_data = self.rx_queue.get(block=False)
-        except queue.Empty:
-            pass
+        assert rx_freedv is not None
 
-        return rx_data
+        nin = rx_freedv.nin
+        rx_bytes = None
+
+        if self.rx_audio_buffer.nbuffer >= nin:
+            rx_samples = self.rx_audio_buffer.buffer[:nin]
+            self.rx_audio_buffer.pop(nin)
+
+            self.rx_state, rx_bytes = rx_freedv.rx(rx_samples.tobytes())
+
+        if rx_bytes:
+            return rx_bytes[:-2]
+
+    def set_tx_volume(self, vol):
+        self.tx_volume = vol / 100
 
     def halt_tx(self):
         self.halted_tx = True
-        with self.tx_queue.mutex:
-            self.tx_queue.queue.clear()
+        self.tx_audio_buffer.pop(self.tx_audio_buffer.nbuffer)
 
     def close(self):
         self.halt_tx()
-        while self.is_transmitting:
-            time.sleep(0.25)
-
-        self.rx_control_queue.put(True)
-        self.tx_control_queue.put(True)
-        time.sleep(0.25)
         self.forward_freedv.close()
         self.arq_freedv.close()
         self.pastream.close()
@@ -216,6 +168,15 @@ class ArqModem(Modem):
         self.rx_frames = {}
         self.last_rx_sync = None
 
+    def wait_for_tx(self):
+        while self.is_transmitting:
+            time.sleep(0.25)
+
+    def tx_test_frame(self):
+        self.set_mode(self.arq_mode)
+        self.tx(self.callsign.encode() + b'TEST')
+        self.wait_for_tx()
+
     def arq_tx(self, data):
         self.frames = []
 
@@ -249,8 +210,7 @@ class ArqModem(Modem):
             assert len(frame) == self.forward_bytes_per_frame
             self.tx(frame)
 
-        while self.is_transmitting:
-            time.sleep(0.25)
+        self.wait_for_tx()
 
         if self.halted_tx:
             self.halted_tx = False
@@ -384,8 +344,7 @@ class ArqModem(Modem):
                     arq_frame = callsign + frame_id.to_bytes(1)
                     self.tx(arq_frame)
 
-                    while self.is_transmitting:
-                        time.sleep(0.25)
+                    self.wait_for_tx()
 
                     if self.halted_tx:
                         self.halted_tx = False
