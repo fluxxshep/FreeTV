@@ -13,5 +13,3 @@ Then, after building codec2 (see next section), run `python freetv.py`
 # libcodec2 (if you are installing manually)
 Finally, you will need to compile codec2 from https://github.com/drowe67/codec2.
 Once built, place the libcodec2.so / .dll files inside a `lib` directory in the same directory as the .py files.
-If you used cx_freeze to build the files, a `lib` directory already exists in the build directory.
-Put the libcodec2 files there!
