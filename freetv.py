@@ -2,8 +2,8 @@ from PySide6.QtWidgets import *
 from PySide6.QtCore import *
 from PySide6.QtGui import *
 from modem import ArqModem, list_audio_devices
-from imagecodecs import avif_encode, avif_decode, AvifError
 import numpy as np
+import imagecodecs
 import cv2
 import time
 
@@ -31,8 +31,10 @@ class ModemWorker(QObject):
     def work(self):
         while self.run:
             if self.test_frame:
+                self.signal.transmit_on_off_signal.emit(True)
                 self.modem.tx_test_frame()
                 self.test_frame = False
+                self.signal.transmit_on_off_signal.emit(False)
 
             elif self.retransmit:
                 self.modem.tx_retransmit_request()
@@ -52,7 +54,7 @@ class ModemWorker(QObject):
 
             elif self.tx_data is not None:
                 self.signal.transmit_on_off_signal.emit(True)
-                compressed_image = avif_encode(self.tx_data, level=10)
+                compressed_image = imagecodecs.avif_encode(self.tx_data, level=10)
                 self.modem.arq_tx(compressed_image)
                 self.tx_data = None
 
@@ -92,6 +94,22 @@ class MainWindow(QMainWindow):
         self.modem_thread = None
         self.tx_volume = 100
 
+        # menubar
+        self.menu_bar = self.menuBar()
+
+        self.in_device_select = self.menu_bar.addMenu('In devices')
+        self.out_device_select = self.menu_bar.addMenu('Out devices')
+
+        for in_device in self.in_devices:
+            action = QAction(self.in_devices[in_device], self.in_device_select)
+            action.triggered.connect(lambda: self.change_input_device(self.in_devices[in_device]))
+            self.in_device_select.addAction(action)
+
+        for out_device in self.out_devices:
+            action = QAction(self.out_devices[out_device], self.out_device_select)
+            action.triggered.connect(lambda: self.change_output_device(self.out_devices[out_device]))
+            self.out_device_select.addAction(action)
+
         # setup widgets
 
         # settings
@@ -108,14 +126,6 @@ class MainWindow(QMainWindow):
 
         self.callsign_input = QLineEdit()
         self.callsign_input.textChanged.connect(self.set_callsign)
-
-        self.in_device_select = QComboBox()
-        self.in_device_select.addItems(self.in_devices.values())
-        self.in_device_select.currentTextChanged.connect(self.change_input_device)
-
-        self.out_device_select = QComboBox()
-        self.out_device_select.addItems(self.out_devices.values())
-        self.out_device_select.currentTextChanged.connect(self.change_output_device)
 
         self.modem_start_button = QPushButton('Modem start / stop')
         self.modem_start_button.clicked.connect(self.start_stop_modem)
@@ -147,8 +157,6 @@ class MainWindow(QMainWindow):
         self.settings_layout.addWidget(self.settings_label)
         self.settings_layout.addWidget(self.callsign_input_label)
         self.settings_layout.addWidget(self.callsign_input)
-        self.settings_layout.addWidget(self.in_device_select)
-        self.settings_layout.addWidget(self.out_device_select)
         self.settings_layout.addWidget(self.modem_start_button)
         self.settings_layout.addWidget(self.volume_label)
         self.settings_layout.addWidget(self.volume_slider)
@@ -166,7 +174,7 @@ class MainWindow(QMainWindow):
         self.image_x = 500
         self.image_y = 500
 
-        self.rx_image = np.ones(shape=(self.image_x, self.image_y, 3), dtype=np.uint8) * 100
+        self.rx_image = np.ones(shape=(self.image_x, self.image_y, 3), dtype=np.uint8) * 200
         self.rx_image_frame = QLabel()
         self.update_rx_image(self.rx_image)
 
@@ -201,7 +209,7 @@ class MainWindow(QMainWindow):
         self.tx_label = QLabel('Transmit')
         self.tx_label.setFont(QFont('Arial', 25))
 
-        self.tx_image = np.ones(shape=(self.image_x, self.image_y, 3), dtype=np.uint8) * 100
+        self.tx_image = np.ones(shape=(self.image_x, self.image_y, 3), dtype=np.uint8) * 200
         self.tx_image_frame = QLabel()
         self.update_tx_image(self.tx_image)
 
@@ -243,7 +251,7 @@ class MainWindow(QMainWindow):
             self.modem_start_button.setPalette(modem_button_palette)
         else:
             self.modem.stop()
-            time.sleep(0.25)
+            time.sleep(0.5)
             self.modem = None
 
             modem_button_palette = self.modem_start_button.palette()
@@ -301,7 +309,8 @@ class MainWindow(QMainWindow):
                 self.update_tx_image(self.tx_image)
 
     def tx_test_frame(self):
-        self.modem.transmit_test_frame()
+        if self.modem is not None:
+            self.modem.transmit_test_frame()
 
     def modem_transmitting_on_off(self, modem_transmitting):
         self.modem_transmitting = modem_transmitting
@@ -318,10 +327,10 @@ class MainWindow(QMainWindow):
     def process_rx(self, rx_data):
         image = None
         try:
-            image = avif_decode(rx_data)
+            image = imagecodecs.avif_decode(rx_data)
             self.update_rx_error_text(False)
 
-        except AvifError:
+        except imagecodecs.AvifError:
             self.update_rx_error_text(True)
 
         if image is not None:

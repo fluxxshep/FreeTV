@@ -57,10 +57,7 @@ class FreeDVData:
 
         assert libname is not None
 
-        try:
-            self.c_lib = CDLL(libname)
-        except Exception:
-            self.c_lib = CDLL('_internal/' + libname)
+        self.c_lib = CDLL(libname)
 
         self.c_lib.freedv_open.restype = POINTER(c_ubyte)
 
@@ -205,6 +202,9 @@ class FreeDVData:
             tx_buffer += self.tx_burst(data_in[i * bytes_per_burst:(i + 1) * bytes_per_burst])
 
         return tx_buffer
+
+    def set_tx_amp(self, amp):
+        self.c_lib.freedv_set_tx_amp(self.freedv, c_float(amp))
 
     def get_freedv_rx_nin(self):
         return self.c_lib.freedv_nin(self.freedv)

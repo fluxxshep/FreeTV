@@ -69,6 +69,10 @@ class Modem:
             if self.tx_audio_buffer.nbuffer > frame_count:
                 tx_samples = self.tx_audio_buffer.buffer[:frame_count]
                 self.tx_audio_buffer.pop(frame_count)
+
+                for i in range(len(tx_samples)):
+                    tx_samples[i] = int(tx_samples[i] * self.tx_volume)
+
                 return tx_samples, pyaudio.paContinue
 
             else:
@@ -170,7 +174,7 @@ class ArqModem(Modem):
 
     def wait_for_tx(self):
         while self.is_transmitting:
-            time.sleep(0.25)
+            time.sleep(0.1)
 
     def tx_test_frame(self):
         self.set_mode(self.arq_mode)
@@ -227,8 +231,7 @@ class ArqModem(Modem):
         self.set_mode(self.forward_mode)
         self.tx(self.frames[frame_id])
 
-        while self.is_transmitting:
-            time.sleep(0.25)
+        self.wait_for_tx()
 
     def wait_for_arq(self):
         print('Waiting for ARQ retransmit request...')
